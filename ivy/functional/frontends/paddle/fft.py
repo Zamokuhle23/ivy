@@ -1,5 +1,6 @@
 # global
 import ivy
+from ivy.func_wrapper import with_unsupported_dtypes
 from ivy.func_wrapper import with_supported_dtypes
 from ivy.functional.frontends.paddle.func_wrapper import (
     to_ivy_arrays_and_back,
@@ -100,3 +101,39 @@ def ifftshift(x, axes=None, name=None):
     roll = ivy.roll(x, shifts, axis=axes)
 
     return roll
+
+_SWAP_DIRECTION_MAP = {
+    None: "forward",
+    "backward": "forward",
+    "ortho": "ortho",
+    "forward": "backward",
+}
+
+
+def _swap_direction(norm):
+    try:
+        return _SWAP_DIRECTION_MAP[norm]
+    except KeyError:
+        raise ValueError(
+            f'Invalid norm value {norm}; should be "backward", "ortho" or "forward".'
+        ) from None
+
+
+@with_unsupported_dtypes({"1.25.1 and below": ("float16",)}, "numpy")
+@to_ivy_arrays_and_back
+def rfft(a, n=None, axis=-1, norm=None):
+    if norm is None:
+        norm = "backward"
+    a = ivy.array(a, dtype=ivy.float64)
+    return ivy.dft(a, axis=axis, inverse=False, onesided=True, dft_length=n, norm=norm)
+
+@with_supported_dtypes(
+    {"2.5.0 and below": ("complex64", "complex128")},
+    "paddle",
+)  
+@to_ivy_arrays_and_back
+def ihfft(a, n=None, axis=-1, norm=None):
+    if n is None:
+        n = a.shape[axis]
+    norm = _swap_direction(norm)
+    return ivy.conj(rfft(a, n, axis, norm=norm).ivy_array)
